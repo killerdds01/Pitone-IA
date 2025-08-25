@@ -1,119 +1,82 @@
-Notebook (Colab) – progettoProgettoso.ipynb
-Addestramento/Riaddestramento del modello Smart Waste
+Cos’è:
+    Notebook Google Colab per allenare o ri-allenare il classificatore dei rifiuti
+    partendo dallo ZIP di export dell’app Flask (Admin → Export).
+    Mantiene separati “IA” e “App”: alleni in Colab, scarichi i pesi e li copi nella root del progetto Flask.
 
-Cos’è
-Notebook Google Colab per allenare o ri-allenare il classificatore dei rifiuti partendo dallo ZIP di export generato dall’app Flask (Admin → Export).
-Mantiene separati “IA” e “App”: alleni in Colab, scarichi i pesi e li metti nella cartella del progetto Flask.
+Prerequisiti (minimi):
+    - ZIP di export dall’app: dataset.csv + images/<classe>/...
+    - Runtime Colab: CPU ok, GPU consigliata (Runtime → Cambia tipo → GPU)
+    - Classi identiche all’app: plastica, carta, vetro, organico, indifferenziato
+    - Almeno ~50 immagini totali (il notebook avvisa se sotto soglia)
 
-Prerequisiti (minimi)
-– Hai uno ZIP di export dall’app: contiene dataset.csv e images/<classe>/...
-– Runtime Colab: CPU ok, GPU consigliata (Menu: Runtime → Cambia tipo di runtime → GPU)
-– Classi identiche a quelle dell’app: plastica, carta, vetro, organico, indifferenziato
-– Un minimo di campioni: lo script avvisa se sotto ~50 immagini totali
+Cosa produce (artefatti):
+    - best_model_finetuned_light.pth  → modello usato dall’app
+    - calibration.json                → temperatura per calibrare le confidenze
+    - smart_waste_model_YYYYmmdd_HHMMSS.zip con i file sopra (+ class_index.json a scopo documentale)
 
-Cosa produce (artefatti)
-– best_model_finetuned_light.pth → modello usato dall’app (stage-1)
-– calibration.json → temperatura per calibrare le confidenze
-– smart_waste_model_YYYYmmdd_HHMMSS.zip con i file sopra (cartella + zip)
+Come portarli nell’app Flask:
+    - Copia nella root del progetto:
+        • best_model_finetuned_light.pth (obbligatorio)
+        • calibration.json (consigliato; senza questo T=1.0)
+    - Riavvia l’app → in console vedrai: [CALIB] T=<valore>
 
-Come portarli nell’app Flask
-Copia nella root del progetto:
-• best_model_finetuned_light.pth (obbligatorio)
-• calibration.json (consigliato, altrimenti T=1.0)
+Flusso rapido (dall’alto verso il basso):
+    1) Cella 1  → import, configurazione, SEED
+    2) Cella 2A → carica lo ZIP e costruisce samples_all
+       (alternativa: 2K-SETUP + 2K-MERGE per integrare dati da Kaggle, es. organico)
+    3) Cella 3M → split train/val/test + Dataset/DataLoader
+    4) Cella 3B → (opzionale) bilanciamento con WeightedRandomSampler
+    5) Cella 4  → definizione modello + training loop con early stopping
+    6) Cella 5  → fine-tuning leggero (solo FC) + salvataggio .pth
+    7) Cella 6B → calibrazione temperatura su validation + salvataggio calibration.json
+    8) Cella 7  → packaging artefatti (cartella + zip) e download
 
-Flusso rapido (esecuzione dall’alto verso il basso)
-1) Cella 1 – Import, configurazione e SEED
-2) Cella 2A – Carica lo ZIP dell’export (o altra cartella) e costruisce samples_all
-(opzione alternativa: 2K-SETUP + 2K-MERGE per integrare dati da Kaggle, es. organico)
-3) Cella 3M – Split train/val/test + Dataset/DataLoader
-4) Cella 3B – (Opzionale) bilanciamento con WeightedRandomSampler
-5) Cella 4 – Definizione modello e training loop con early stopping
-6) Cella 5 – Stage-1: fine-tuning leggero (solo FC) + salvataggio
-7) Cella 5B – Stage-2: sblocca layer4+fc, breve rifinitura + salvataggio
-8) Cella 6 – Valutazione su test (stage-2)
-9) Cella 6B – Calibrazione temperatura su validation + salvataggio calibration.json
-10) Cella 7 – Packaging artefatti (cartella + zip) per download
+Parametri che puoi toccare in sicurezza:
+    - Batch size (Cella 3M) → adatta a RAM/GPU
+    - Augmentazioni (Cella 3M) → RandomResizedCrop, Flip, ColorJitter
+    - Learning rate e patience (Cella 5) → velocità/aggressività training
+    - Grid ricerca temperatura (Cella 6B) → range per la calibrazione
+    - Dati esterni (Celle 2K-*) → utile per aumentare “organico” da Kaggle
 
-Parametri che puoi toccare in sicurezza
-– Batch size (Cella 3M) → per RAM/GPU
-– Augmentazioni (Cella 3M) → RandomResizedCrop, Flip, ColorJitter
-– Learning rate e patience (Celle 5 / 5B) → velocità e aggressività training
-– Grid della temperatura (Cella 6B) → range di ricerca per la calibrazione
-– Inclusione dati esterni (Celle 2K-*) → solo se vuoi aggiungere organico da Kaggle
+Struttura per celle (cosa fanno):
+    Cella 1: Importazioni, Configurazione e Seed
+        - Importa librerie, imposta SEED e device (GPU se presente)
+        - Definisce le CLASSI (devono coincidere con l’app)
+    Cella 2A: Carica lo ZIP dell’export e costruisce samples_all
+        - Scompatta lo zip e scansiona images/<classe>/* → [(path, label_idx), ...]
+        - dataset.csv è informativo, non necessario per caricare le immagini
+    Cella 2K-SETUP (opzionale): Kaggle via CLI
+        - Configura credenziali e scarica un dataset esterno
+    Cella 2K-MERGE (opzionale): unione Kaggle → samples_all
+        - Aggiunge SOLO “organico” (o tutte tranne “metal”, se configurato)
+    Cella 3M: Split + Dataset + DataLoader
+        - Divide 80/10/10 e definisce trasformazioni coerenti con ResNet18
+    Cella 3B (opzionale): WeightedRandomSampler
+        - Bilancia il training in caso di classi sbilanciate
+    Cella 4: Modello + training loop
+        - ResNet18 con fc a 5 classi; early stopping su val_loss; ReduceLROnPlateau
+    Cella 5: Fine-tuning leggero (solo fc)
+        - Congela tutto tranne la fc; label smoothing
+        - Salva best_model_finetuned_light.pth (compatibile con l’app)
+    Cella 6B: Calibrazione (Temperature Scaling) su validation
+        - Stima T (grid search) e salva calibration.json
+    Cella 7: Packaging artefatti
+        - Crea cartella versionata + zip (pth, calibration.json, class_index.json)
 
-Struttura per celle (che cosa fanno in pratica)
+Note / avvertenze:
+    - HEIC/HEIF: in Colab spesso non c’è decoder; l’export dell’app è già in JPG/PNG → ok.
+    - Out of memory: abbassa batch_size (Cella 3M).
+    - Pochi dati: sotto ~50 campioni la qualità è bassa; raccogli più immagini + feedback.
+    - Riproducibilità: stesso SEED = split stabili; piccole differenze di training sono normali.
+    - Cambi classi: devi aggiornare sia il notebook sia l’app (CLASS_NAMES e template).
 
-Cella 1: Importazioni, Configurazione e Seed
-    • Importa librerie (torch/torchvision/PIL/numpy/zipfile ecc.)
-    • Definisce CLASS_NAMES (devono coincidere con l’app)
-    • Imposta SEED per riproducibilità e seleziona device (GPU se presente)
+Mappatura Colab → App:
+    - Copia in root del progetto Flask:
+        • best_model_finetuned_light.pth
+        • calibration.json
+    - Non serve altro per far girare l’inferenza nell’app.
 
-Cella 2A: Carica lo ZIP dell’export e costruisce samples_all
-    • Attende l’upload dello zip (o lo prende da Drive se lo monti)
-    • Scompatta in una cartella temporanea
-    • Scansiona `images/<classe>/*` e crea `samples_all = [(path, label_idx), ...]`
-    • NOTA: `dataset.csv` non è usato per il caricamento immagini (solo informativo)
-
-Cella 2K-SETUP (Opzionale A): Kaggle via CLI
-    • Setup credenziali kaggle (solo se vuoi integrare un dataset esterno)
-    • Scarica/estrei un dataset (tipicamente organico) in una cartella
-
-Cella 2K-MERGE (Opzionale): Unisci dataset Kaggle a samples_all
-    • Aggiunge SOLO la classe “organico” dalle immagini scaricate
-    • Utile se i tuoi dati organico sono pochi o poco vari
-
-Cella 3M: Split deterministico + Dataset + DataLoader
-    • Divide `samples_all` in train/val/test (80/10/10)
-    • Crea trasformazioni: train (augmentazioni leggere) e test/val (resize+centercrop)
-    • Costruisce PathDataset e DataLoader
-
-Cella 3B (Opzionale): WeightedRandomSampler
-    • Calcola pesi inversi alla frequenza delle classi per il train
-    • Serve a bilanciare dataset sbilanciati; altrimenti puoi usare semplice shuffle
-
-Cella 4: Architettura ResNet18 + training loop
-    • Definisce ResNet18, sostituisce la `fc` con 5 classi
-    • Definisce `train_model()` con early stopping su validation loss
-    • Usa `ReduceLROnPlateau` per ridurre LR quando la val_loss non scende
-
-Cella 5: Stage-1 – Fine-tuning leggero (solo fc)
-    • Congela tutti i layer tranne la testa (fc)
-    • Allena per N epoche con label smoothing
-    • Salva `best_model_finetuned_light.pth`  ← quello che userà l’app
-
-Cella 5B: Stage-2 – Fine-tuning (layer4 + fc)
-    • Riparte dai pesi Stage-1
-    • Sblocca `layer4` + `fc`, batch norm in eval (stabile)  
-    • Poche epoche, LR più piccola; salva `best_model_stage2.pth`
-
-Cella 6: Valutazione Finale (Stage-2) su Test
-    • Calcola accuracy sul test per visione rapida della qualità
-
-Cella 6B: Calibrazione (Temperature Scaling) su Validation
-    • Trova T (grid search) che minimizza la NLL su validation
-    • Salva `calibration.json` con il valore T (es. 0.6 / 0.8 / 1.2 …)
-
-Cella 7: Packaging Artefatti
-    • Crea cartella `smart_waste_model_YYYYmmdd_HHMMSS/`
-    • Copia `.pth`, `calibration.json`, `class_index.json`
-    • Crea lo ZIP pronto per il download
-
-
-Note/avvertenze utili
-– HEIC/HEIF: Colab spesso non ha decoder HEIC installato; l’export dell’app salva già JPEG/PNG, quindi ok.
-– “Out of memory”: abbassa batch_size in Cella 3M o usa solo Stage-1.
-– Pochi dati: lo script blocca se <50 campioni. Meglio raccogliere più immagini + feedback.
-– Riproducibilità: con gli stessi dati e SEED, gli split restano stabili; piccoli scarti di training sono normali.
-– Che modello usa l’app? best_model_finetuned_light.pth + calibration.json. Stage-2 è un extra/backup.
-– Aggiornare le classi: se in futuro cambi CLASS_NAMES, devi cambiare anche l’app (e i template).
-
-Mappatura Colab → App (cosa copiare dove)
-• Copia in root progetto Flask:
-- best_model_finetuned_light.pth
-- calibration.json
-• Riavvia l’app (o ricarica) → vedrai [CALIB] T=<valore> in console.
-
-FAQ veloci
-– Posso saltare Stage-2? Sì. L’app funziona con Stage-1.
-– Posso usare solo immagini organico da Kaggle? Sì: usa 2K-SETUP + 2K-MERGE.
-– Perché temperature scaling? Per avere probabilità più “oneste” (meno over-confident).
+FAQ veloci:
+    - Posso aggiungere solo “organico” da Kaggle? Sì (2K-SETUP + 2K-MERGE).
+    - Perché la calibrazione? Rende le probabilità più “oneste” (meno over-confident).
+    - Posso usare solo CPU? Sì, è più lento ma funziona.
