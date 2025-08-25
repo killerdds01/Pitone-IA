@@ -13,9 +13,7 @@ Prerequisiti (minimi)
 
 Cosa produce (artefatti)
 – best_model_finetuned_light.pth → modello usato dall’app (stage-1)
-– best_model_stage2.pth → modello rifinito (facoltativo)
 – calibration.json → temperatura per calibrare le confidenze
-– class_index.json → mappa indice→nome classe
 – smart_waste_model_YYYYmmdd_HHMMSS.zip con i file sopra (cartella + zip)
 
 Come portarli nell’app Flask
@@ -57,7 +55,7 @@ Cella 2A: Carica lo ZIP dell’export e costruisce samples_all
     • Scansiona `images/<classe>/*` e crea `samples_all = [(path, label_idx), ...]`
     • NOTA: `dataset.csv` non è usato per il caricamento immagini (solo informativo)
 
-Cella 2K-SETUP (Opzionale A): Kaggle via CLI
+Cella 2K-SETUP: Kaggle via CLI
     • Setup credenziali kaggle (solo se vuoi integrare un dataset esterno)
     • Scarica/estrei un dataset (tipicamente organico) in una cartella
 
